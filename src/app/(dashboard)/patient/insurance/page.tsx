@@ -464,3 +464,4 @@ export default function PatientInsurancePage() {
     </div>
   );
 }
+// Insurance module
