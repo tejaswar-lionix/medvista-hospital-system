@@ -1,0 +1,372 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  DOCTOR
+  PATIENT
+  STAFF
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum BillStatus {
+  PENDING
+  PAID
+  PARTIAL
+  CANCELLED
+}
+
+enum NotificationType {
+  APPOINTMENT
+  BILLING
+  SYSTEM
+  REMINDER
+}
+
+enum ContactMessageStatus {
+  PENDING
+  READ
+  REPLIED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          Role      @default(PATIENT)
+  phone         String?
+  address       String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts          Account[]
+  sessions          Session[]
+  doctor            Doctor?
+  patient           Patient?
+  notifications     Notification[]
+  blogPosts         Blog[]
+  medicalRecords    MedicalRecord[]
+  prescriptions     Prescription[]
+  feedbackGiven     Feedback[]     @relation("FeedbackFrom")
+  feedbackReceived  Feedback[]     @relation("FeedbackTo")
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  image       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  doctors      Doctor[]
+  appointments Appointment[]
+
+  @@map("departments")
+}
+
+model Doctor {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  departmentId     String
+  specialization   String
+  qualification    String
+  experience       Int      @default(0)
+  bio              String?  @db.Text
+  consultationFee  Float
+  rating           Float    @default(0)
+  isAvailable      Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department       Department       @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  availability     DoctorAvailability[]
+  appointments     Appointment[]
+  medicalRecords   MedicalRecord[]
+  prescriptions    Prescription[]
+  feedbackReceived Feedback[]       @relation("FeedbackTo")
+
+  @@map("doctors")
+}
+
+model DoctorAvailability {
+  id         String  @id @default(cuid())
+  doctorId   String
+  dayOfWeek  Int
+  startTime  String
+  endTime    String
+  isAvailable Boolean @default(true)
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, dayOfWeek, startTime])
+  @@map("doctor_availability")
+}
+
+model Patient {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments    Appointment[]
+  medicalRecords  MedicalRecord[]
+  prescriptions   Prescription[]
+  bills           Bill[]
+  feedbackGiven   Feedback[]       @relation("FeedbackFrom")
+
+  @@map("patients")
+}
+
+model Appointment {
+  id              String            @id @default(cuid())
+  patientId       String
+  doctorId        String
+  departmentId    String
+  appointmentDate DateTime
+  timeSlot        String
+  status          AppointmentStatus @default(SCHEDULED)
+  reason          String?           @db.Text
+  notes           String?           @db.Text
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  patient       Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor        Doctor        @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+  department    Department    @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  medicalRecord MedicalRecord?
+  bill          Bill?
+  feedback      Feedback?
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([appointmentDate])
+  @@map("appointments")
+}
+
+model MedicalRecord {
+  id            String   @id @default(cuid())
+  patientId     String
+  doctorId      String
+  appointmentId String   @unique
+  diagnosis     String   @db.Text
+  symptoms      String   @db.Text
+  prescription  String?  @db.Text
+  notes         String?  @db.Text
+  followUpDate  DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  patient     Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor      Doctor      @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Restrict)
+  prescriptions Prescription[]
+
+  @@index([patientId])
+  @@map("medical_records")
+}
+
+model Prescription {
+  id               String   @id @default(cuid())
+  medicalRecordId  String
+  patientId        String
+  doctorId         String
+  medicines        Json
+  instructions     String?  @db.Text
+  duration         String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  medicalRecord MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Cascade)
+  patient       Patient       @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor        Doctor        @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+
+  @@index([patientId])
+  @@map("prescriptions")
+}
+
+model Bill {
+  id            String     @id @default(cuid())
+  patientId     String
+  appointmentId String?    @unique
+  billNumber    String     @unique
+  items         Json
+  subtotal      Float
+  tax           Float      @default(0)
+  discount      Float      @default(0)
+  totalAmount   Float
+  status        BillStatus @default(PENDING)
+  paymentMethod String?
+  paidAt        DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  patient     Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  payments    Payment[]
+
+  @@index([patientId])
+  @@index([billNumber])
+  @@map("bills")
+}
+
+model Payment {
+  id            String   @id @default(cuid())
+  billId        String
+  amount        Float
+  paymentMethod String
+  transactionId String?
+  status        String   @default("pending")
+  paidAt        DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@index([billId])
+  @@map("payments")
+}
+
+model Feedback {
+  id            String   @id @default(cuid())
+  patientId     String
+  doctorId      String
+  appointmentId String?  @unique
+  rating        Int
+  comment       String?  @db.Text
+  isAnonymous   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  patient     Patient     @relation("FeedbackFrom", fields: [patientId], references: [id], onDelete: Cascade)
+  doctor      Doctor      @relation("FeedbackTo", fields: [doctorId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([doctorId])
+  @@index([rating])
+  @@map("feedback")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  title     String
+  message   String           @db.Text
+  type      NotificationType @default(SYSTEM)
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model ContactMessage {
+  id        String              @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  subject   String
+  message   String              @db.Text
+  status    ContactMessageStatus @default(PENDING)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@index([status])
+  @@map("contact_messages")
+}
+
+model Blog {
+  id          String    @id @default(cuid())
+  title       String
+  slug        String    @unique
+  content     String    @db.Text
+  excerpt     String?
+  authorId    String
+  category    String?
+  isPublished Boolean   @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([slug])
+  @@index([isPublished])
+  @@map("blogs")
+}
+
+model FAQ {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String   @db.Text
+  category  String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category, sortOrder])
+  @@map("faqs")
+}
